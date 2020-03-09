@@ -1,303 +1,308 @@
 import React from 'react';
 import {
-  Button, TextField, Typography, Grid, Link,
-  Card, CardContent, CardHeader, CardMedia,
-  CssBaseline, Snackbar, InputAdornment, Backdrop, createMuiTheme,
-  ThemeProvider, Box, CircularProgress, Dialog, DialogActions,
-  DialogContent, DialogTitle, DialogContentText,
-} from '@material-ui/core';
-import { Alert } from '@material-ui/lab';
-import { pink } from '@material-ui/core/colors';
-import axios from 'axios';
+  Button, CardDeck, Card, Form, Modal, CardGroup, Table, Col, Alert,
+} from 'react-bootstrap';
+import TextField from '@material-ui/core/TextField';
+import Autocomplete from '@material-ui/lab/Autocomplete';
 import _ from 'lodash';
+import axios from 'axios';
+import 'bootstrap/dist/css/bootstrap.min.css';
+import CourseItem from '../components/CourseItem';
+import logo from './logo.svg';
 import './index.css';
-import { getCourseCode } from '../utils/courses';
-import logo from '../res/icon.svg';
-import step1 from '../res/calendar-step-1.png';
-import step2 from '../res/calendar-step-2.png';
 
-const apiKey = 'e11fd522920fbd64cb49ecd93464e8a3';
-
-const snackbarWarningText = 'Your course info cannot be read. Please try again and make sure the text is not modified.';
-
-const theme = createMuiTheme({
-  palette: {
-    primary: {
-      main: pink[300],
-      dark: '#ba2d65',
-      light: '#ff94c2',
-    },
-  },
-});
+const apiKey = '4ad350333dc3859b91bcf443d14e4bf0';
 
 class WelcomePage extends React.Component {
   constructor(props) {
     super(props);
     this.state = {
+      modalShow: false,
+      currentCourses: [],
+      allSubjects: [],
+      courseNumbers: [],
+      subjectBox: '',
+      courseNumberBox: '',
+      showAlert: false,
       rawCourses: '',
-      snackbarOpen: false,
-      fullPageOverlayOpen: false,
-      dialogOpen: false,
-      questId: '',
-      courseCodes: '',
-      snackbarTheme: '',
-      snackbarText: '',
+      courseInfo: [],
     };
   }
 
-  validate = (nameFromCode, originalName) => {
-    const sortedUniqueNameFromCode = _.uniq(nameFromCode).sort();
-    const sortedOriginalCode = originalName.sort();
-    if (_.isEqual(sortedUniqueNameFromCode, sortedOriginalCode)) {
-      this.setState({ dialogOpen: true });
-    } else {
-      console.log('original courses and courses from course code do not match');
-      this.showSnackbar('warning', snackbarWarningText);
-    }
+  componentDidMount() {
+    console.log('mounted');
+    this.loadSubjects();
   }
 
-  loadCourseInfo = (courseCodes, courseNames) => {
-    const timeout = 10000;
-    this.setState({ fullPageOverlayOpen: true });
-    const instance = axios.create({
-      baseURL: 'https://api.uwaterloo.ca/v2/courses',
-      timeout,
+  loadCourseInfo = async (courseNames) => {
+    const allUrl = courseNames.map((str) => {
+      const [sub, cata] = str.split(' ');
+      return `https://api.uwaterloo.ca/v2/courses/${sub}/${cata}/schedule.json`;
     });
-    const promises = courseCodes.map((code) => instance.get(`/${code}/schedule.json`, {
+    Promise.all(allUrl.map((url) => axios.get(url, {
       params: {
         key: apiKey,
       },
-    }));
-    axios.all(promises).then((values) => {
+    }))).then((values) => {
       const courseInfo = values.map((value) => value.data.data);
-      const subjectNamsFromCourseCodes = courseInfo.map((info) => {
-        const subjectName = getCourseCode(info[0]);
-        return subjectName;
-      });
-      this.setState({ fullPageOverlayOpen: false });
-      if (subjectNamsFromCourseCodes.includes(null)) {
-        console.log('course not found with 4-digit course number');
-        this.showSnackbar('warning', snackbarWarningText);
-      } else {
-        this.validate(subjectNamsFromCourseCodes, courseNames);
-      }
-    }).catch((error) => {
-      if (error.message === `timeout of ${timeout}ms exceeded`) {
-        this.showSnackbar('error', 'Network Timeout. Could be the problem of the server. Please try again later.');
-      } else {
-        this.showSnackbar('error', error.message);
-      }
-      console.log(error);
-      this.setState({ fullPageOverlayOpen: false });
+      console.log(courseInfo);
+      this.setState({ courseInfo });
     });
   }
 
   parseCourses = (rawCourses) => {
-    const classNumbers = rawCourses.match(/^\d{4}$/gm);
+    const lines = rawCourses.split('\n').filter((str) => /^[0-9]{4}$/.test(str));
     const courseNames = rawCourses.match(/[A-Z]{2,6} \d{1,3}[A-Z]? - /g).map((x) => x.substring(0, x.length - 3));
-    if (rawCourses.match(/^\d{3}$/gm).length !== classNumbers.length) {
-      console.log("number of course numbers and catlog numbers doesn't match");
-      this.showSnackbar('warning', snackbarWarningText);
-      return;
-    }
-    this.setState({ courseCodes: classNumbers.map((x) => parseInt(x, 10)) });
-    this.loadCourseInfo(classNumbers, courseNames);
-  }
 
-  showSnackbar = (snackbarTheme, snackbarText) => {
-    this.setState({ snackbarTheme, snackbarText, snackbarOpen: true });
-  }
-
-  hideSnackbar = (event, reason) => {
-    if (reason === 'clickaway') {
-      return;
-    }
-    this.setState({ snackbarOpen: false });
-  }
-
-  handleDialogClose = () => {
-    this.hideSnackbar();
-    this.setState({ dialogOpen: false, rawCourses: '' });
-  }
-
-  handleRawCoursesInputChange = (rawCourses) => {
-    this.setState({ rawCourses });
-  }
-
-  handleEmailAddressChange = (val) => {
-    this.setState({ questId: val });
-  }
-
-  handleSubmitClick = () => {
-    const timeout = 8000;
-    const { questId, courseCodes } = this.state;
-    if (!questId) {
-      this.showSnackbar('warning', 'Email address cannot be empty!');
-      return;
-    }
-    this.setState({ fullPageOverlayOpen: true });
-    const url = 'https://qemn8c6rx9.execute-api.us-east-2.amazonaws.com/test/handlescheduleinput';
-    axios.post(
-      url,
-      {
-        id: questId,
-        sections: courseCodes,
-      },
-      {
-        timeout,
-      },
-    ).then((response) => {
-      console.log(response);
-      this.showSnackbar('success', 'Thank you! We will notify you by email if you win the prize.');
-      this.setState({ fullPageOverlayOpen: false });
-    }).catch((error) => {
-      if (error.message === `timeout of ${timeout}ms exceeded`) {
-        this.showSnackbar('error', 'Network Timeout. Please check your internet connection.');
-      } else {
-        this.showSnackbar('error', error.message);
-      }
-      console.log(error);
-      this.setState({ fullPageOverlayOpen: false });
+    this.setState({
+      currentCourses: courseNames.map(
+        (item) => ({ courseCode: item, keepable: true, keep: true }),
+      ),
     });
-    this.handleDialogClose();
+    console.log(courseNames);
+    this.loadCourseInfo(courseNames);
   }
 
-  handlePaste = (rawCourses) => {
-    this.hideSnackbar();
-    console.log(rawCourses);
-    this.setState({ rawCourses });
-    try {
-      this.parseCourses(rawCourses);
-    } catch (error) {
-      console.log(error);
-      this.showSnackbar('warning', snackbarWarningText);
-    }
+  showModal = () => {
+    const { rawCourses } = this.state;
+    this.setState({
+      modalShow: true,
+    });
+    this.parseCourses(rawCourses);
   }
+
+  hideModal = () => {
+    this.setState({
+      modalShow: false,
+    });
+  }
+
+  dropCourse = (courseCode) => {
+    const { currentCourses, courseInfo } = this.state;
+    const newCurrentCourses = currentCourses.filter((item) => item.courseCode !== courseCode);
+    const newCourseInfo = courseInfo.filter((item) => {
+      const { subject, catalog_number } = item[0];
+      return `${subject} ${catalog_number}` !== courseCode;
+    });
+    this.setState({
+      currentCourses: newCurrentCourses,
+      courseInfo: newCourseInfo,
+    });
+    this.render();
+  }
+
+  loadSubjects = async () => {
+    const url = 'https://api.uwaterloo.ca/v2/codes/subjects.json';
+    const response = await axios.get(url, {
+      params: {
+        key: apiKey,
+      },
+    });
+    const allSubjects = response.data.data.map((item) => item.subject);
+    this.setState({
+      allSubjects,
+    });
+  }
+
+  loadCourseNumbers = async (subject) => {
+    if (!subject) return;
+    const url = `https://api.uwaterloo.ca/v2/courses/${subject}.json`;
+    const response = await axios.get(url, {
+      params: {
+        key: apiKey,
+      },
+    });
+    const courseNumbers = response.data.data.map((item) => item.catalog_number);
+    this.setState({
+      courseNumbers,
+    });
+  }
+
+  updateRawCourses = (rawCourses) => {
+    this.setState({ rawCourses });
+  }
+
+  handleAddClick = async () => {
+    const {
+      subjectBox, courseNumberBox, currentCourses, courseInfo,
+    } = this.state;
+    const url = `https://api.uwaterloo.ca/v2/courses/${subjectBox}/${courseNumberBox}/schedule.json`;
+    const response = await axios.get(url, {
+      params: {
+        key: apiKey,
+      },
+    });
+    const courseCode = `${subjectBox} ${courseNumberBox}`;
+    if (response.data.meta.status !== 200) {
+      // this.setState({
+      //   showAlert: true,
+      // });
+      alert(`The course ${courseCode} is unavailable for this term.`);
+      return;
+    }
+
+    const newCurrentCourses = currentCourses.slice();
+    if (newCurrentCourses.filter((item) => courseCode === item.courseCode).length) {
+      return;
+    }
+    newCurrentCourses.push({
+      courseCode,
+      keepable: false,
+    });
+    const newCourseInfo = courseInfo.slice();
+    newCourseInfo.push(response.data.data);
+    this.setState({
+      currentCourses: newCurrentCourses,
+      courseInfo: newCourseInfo,
+    });
+  }
+
+  handleViewScheduleClick = () => {
+    const { currentCourses, courseInfo } = this.state;
+    const filtered_courses = [];
+    console.log(courseInfo);
+    const grouped = courseInfo.map((/** @type {[]} */ course) => _.groupBy(course, (s) => s.section[4]));
+    const finalGrouped = [];
+    for (let i = 0; i < grouped.length; ++i) {
+      const course = [];
+      for (const key in grouped[i]) {
+        course.push(grouped[i][key]);
+      }
+      const primary = course[0];
+      const rearranged = primary.map((p) => {
+      // for (let i = 1; i < grouped.length; ++i) {
+
+        // }
+        const other = course.slice(1).map((t) => {
+          let matched = t.filter((s) => s.associated_class === p.associated_class);
+          if (!matched.length) {
+            matched = t.filter((s) => s.associated_class === 99);
+          }
+          return matched.map((s) => s.classNumber);
+        });
+        return [[p]].concat(other);
+      });
+      finalGrouped.push(rearranged);
+    }
+    console.log(finalGrouped);
+
+    const data = {
+      courses_info: courseInfo,
+      filtered_courses,
+    };
+    console.log(data);
+  }
+
 
   render() {
     const {
-      snackbarOpen, fullPageOverlayOpen, dialogOpen, snackbarTheme, snackbarText, rawCourses,
+      modalShow, currentCourses, allSubjects, courseNumbers, showAlert, subjectBox, courseNumberBox,
     } = this.state;
-
     return (
-      <ThemeProvider theme={theme}>
-        <Box p={2} style={{ paddingRight: '55px' }}>
-          <CssBaseline />
-          <Snackbar
-            open={snackbarOpen}
-            onClose={this.hideSnackbar}
-            anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
-          >
-            <Alert severity={snackbarTheme} onClose={this.hideSnackbar}>
-              {snackbarText}
-            </Alert>
-          </Snackbar>
-          <img src={logo} alt="Logo" className="logo" />
-          <Grid container justify="center" spacing={5} style={{ maxWidth: '1500px', margin: 'auto' }}>
-            <Grid item xs={12} md={4} lg>
-              <Card className="card" raised>
-                <CardHeader title="Step 1" className="header" />
-                <CardContent>
-                  <Typography variant="body1">
-                    Go to&nbsp;
-                    <Link href="https://quest.pecs.uwaterloo.ca/psp/SS/ACADEMIC/SA/?cmd=login&languageCd=ENG" target="_blank">Quest</Link>
-                    &nbsp;, click &quot;Class Schedule&quot;.
-                  </Typography>
-                </CardContent>
-                <CardMedia
-                  image={step1}
-                  title="Go to Class Schedule"
-                  className="step-img"
-                />
-              </Card>
-            </Grid>
-            <Grid item xs={12} md={4} lg>
-              <Card className="card" raised style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                <CardHeader title="Step 2" className="header" />
-                <CardContent>
-                  <Typography variant="body1">Choose your term, select all and copy.</Typography>
-                </CardContent>
-                <CardMedia
-                  image={step2}
-                  title="Select All and Copy"
-                  className="step-img stick-bottom"
-                />
-              </Card>
-            </Grid>
-            <Grid item xs={12} md={4} lg>
-
-              <Card className="card" raised style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-                <CardHeader title="Step 3" className="header" />
-                <CardContent style={{
-                  display: 'flex', flexDirection: 'column', flexGrow: 1, paddingBottom: '16px',
+      <div className="WelcomePage">
+        <img src={logo} alt="Logo" className="Logo" />
+        <CardDeck className="StepsDeck">
+          <Card className="Card" border="primary">
+            <Card.Header as="h5">Step 1</Card.Header>
+            <Card.Body>
+              <Card.Text>Go to Quest and click "Class Schedule".</Card.Text>
+              <Card.Img src="https://uwflow.com/static/img/import-schedule/step-1.png" />
+            </Card.Body>
+          </Card>
+          <Card className="Card">
+            <Card.Header as="h5">Step 2</Card.Header>
+            <Card.Body>
+              <Card.Text>Choose your term, then select all and copy.</Card.Text>
+              <Card.Img src="https://uwflow.com/static/img/import-schedule/step-2.png" />
+            </Card.Body>
+          </Card>
+          <Card className="Card">
+            <Card.Header as="h5">Step 3</Card.Header>
+            <Card.Body>
+              <Card.Text>Paste into the box below.</Card.Text>
+              <Form>
+                <Form.Group>
+                  <Form.Control as="textarea" className="PasteBox" rows="15" onChange={(e) => this.updateRawCourses(e.target.value)} />
+                </Form.Group>
+                <Button block onClick={this.showModal}>Next</Button>
+              </Form>
+            </Card.Body>
+          </Card>
+        </CardDeck>
+        <Modal size="lg" show={modalShow} onHide={this.hideModal}>
+          <CardGroup>
+            <Card className="CourseEditCard" style={{ overflowY: 'scroll' }}>
+              <Table hover>
+                <thead>
+                  <tr>
+                    <th>Course</th>
+                    {/* <th className="KeepColumn">Keep unchanged?</th> */}
+                  </tr>
+                </thead>
+                <tbody>
+                  {
+                    currentCourses.map((item) => {
+                      const { courseCode, keepable, keep } = item;
+                      return (
+                        <CourseItem
+                          key={courseCode}
+                          courseCode={courseCode}
+                          keepable={keepable}
+                          keep={keep}
+                          onDropClick={() => this.dropCourse(courseCode)}
+                        />
+                      );
+                    })
+                  }
+                </tbody>
+              </Table>
+            </Card>
+            <Card className="CourseEditCard">
+              <Autocomplete
+                className="AutoCompleteInput"
+                id="subjectBox"
+                options={allSubjects}
+                renderInput={(params) => (
+                  <TextField {...params} label="Subject" variant="outlined" fullWidth />
+                )}
+                fullWidth
+                onSelect={(e) => {
+                  this.loadCourseNumbers(e.target.value);
+                  this.setState({
+                    subjectBox: e.target.value.toUpperCase(),
+                  });
                 }}
-                >
-                  <Box mb={2}>
-                    <Typography variant="body1">Paste into the box below.</Typography>
-                  </Box>
-
-                  <TextField
-                    style={{ flexGrow: 1 }}
-                    value={rawCourses}
-                    onPaste={(e) => this.handlePaste(e.clipboardData.getData('text/plain'))}
-                    multiline
-                    required
-                    variant="outlined"
-                    fullWidth
-                    rows={12}
-                    onChange={(e) => this.handleRawCoursesInputChange(e.target.value)}
-                    InputProps={{
-                      style: {
-                        height: '100%',
-                      },
-                    }}
-                    inputProps={{
-                      style: {
-                        height: '100%',
-                      },
-                    }}
-                  />
-
-                </CardContent>
-              </Card>
-            </Grid>
-          </Grid>
-        </Box>
-        <Backdrop
-          style={{
-            zIndex: theme.zIndex.drawer + 1,
-            color: '#fff',
-          }}
-          open={fullPageOverlayOpen}
-        >
-          <CircularProgress color="inherit" />
-        </Backdrop>
-        <Dialog open={dialogOpen} onClose={this.handleDialogClose} aria-labelledby="form-dialog-title">
-          <DialogTitle id="form-dialog-title">Submit</DialogTitle>
-          <DialogContent>
-            <DialogContentText>
-              Please enter your UWaterloo ID for a chance win a prize!
-            </DialogContentText>
-            <TextField
-              autoFocus
-              margin="dense"
-              id="name"
-              label="Email Address"
-              fullWidth
-              InputProps={{ endAdornment: <InputAdornment position="end">@uwaterloo.ca</InputAdornment> }}
-              onChange={(e) => this.handleEmailAddressChange(e.target.value)}
-            />
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={this.handleDialogClose} color="primary">
-              Cancel
-            </Button>
-            <Button onClick={this.handleSubmitClick} color="primary">
-              Submit
-            </Button>
-          </DialogActions>
-        </Dialog>
-      </ThemeProvider>
+              />
+              <Autocomplete
+                className="AutoCompleteInput"
+                id="courseNumberBox"
+                options={courseNumbers}
+                getOptionLabel={(option) => option}
+                renderInput={(params) => (
+                  <TextField {...params} label="Course number" variant="outlined" fullWidth />
+                )}
+                onSelect={(e) => this.setState({
+                  courseNumberBox: e.target.value,
+                })}
+              />
+              <Button onClick={this.handleAddClick} style={{ margin: '16px' }}>Add</Button>
+              {/* <Alert show={showAlert} variant="warning">
+                <Alert.Heading>Warning</Alert.Heading>
+                <p>
+              The course
+                  <strong>{` ${subjectBox} ${courseNumberBox} `}</strong>
+              is unavailable this term.
+                </p>
+                <hr />
+                <div className="d-flex justify-content-end">
+                  <Button onClick={() => this.setState({ showAlert: false })} variant="outline-warning">OK</Button>
+                </div>
+              </Alert> */}
+            </Card>
+          </CardGroup>
+          <Button style={{ margin: '16px' }} onClick={this.handleViewScheduleClick}>View Recommended Schedules</Button>
+        </Modal>
+      </div>
     );
   }
 }
